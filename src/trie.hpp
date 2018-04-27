@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <memory>
 #include <vector>
 
 namespace trie {
@@ -37,10 +38,10 @@ namespace trie {
   };
 
   class TrieNode_t {
-    std::map<unsigned int, TrieNode_t*> m_childrenMap; // used to save all the children (access / insertion O(log n))
+    std::map<unsigned int, std::unique_ptr<TrieNode_t>> m_childrenMap; // used to save all the children (access / insertion O(log n))
     unsigned int m_content; // used to store the current character code in it's structure
     bool m_endOfWord;
-    std::vector<std::string>* m_nodeContent;
+    std::unique_ptr<std::vector<std::string>> m_nodeContent;
 
   public:
     TrieNode_t(unsigned int val)
@@ -51,30 +52,35 @@ namespace trie {
 
     void buildContent()
     {
-      m_nodeContent = new std::vector<std::string>();
+      m_nodeContent.reset(new std::vector<std::string>());
     }
 
     std::vector<TrieNode_t*> getChildren()
     {
       std::vector<TrieNode_t*> nodes;
-      for (auto cur : this->m_childrenMap) {
-        nodes.push_back(cur.second);
+      for (auto &cur : this->m_childrenMap) {
+        nodes.push_back(cur.second.get());
       }
       return nodes;
     }
 
     TrieNode_t* insertNReturnChild(unsigned int value)
     {
-      TrieNode_t* node = new TrieNode_t(value);
-      this->m_childrenMap.insert({ value, node });
-      return node;
+      auto finder = this->m_childrenMap.find(value);
+
+      if(finder != this->m_childrenMap.end()){
+        return finder->second.get();
+      }else{
+        return this->m_childrenMap.emplace(value, std::unique_ptr<TrieNode_t>(new TrieNode_t(value))).first->second.get();
+      }
+
     }
 
     TrieNode_t* getChild(unsigned int value)
     {
       auto child = this->m_childrenMap.find(value);
       if (child != this->m_childrenMap.end()) {
-        return child->second;
+        return child->second.get();
       }
       return nullptr;
     }
@@ -101,7 +107,7 @@ namespace trie {
 
     const std::vector<std::string>* getValues()
     {
-      return this->m_nodeContent;
+      return this->m_nodeContent.get();
     }
   };
 
@@ -138,7 +144,7 @@ namespace trie {
   };
 
   class Trie_t {
-    TrieNode_t* m_lambdaNode; // used to indicate the first node
+    std::unique_ptr<TrieNode_t> m_lambdaNode; // used to indicate the first node
     std::unordered_map<unsigned int, unsigned int> m_characterMap; // used to map all the characters to it's defined codes
     std::unordered_map<unsigned int, char> m_reverseCharacterMap; // used to map all the defined codes to it's characters (4fun)
     std::set<ActiveNode_t> m_activeNodeSet; // uset to save the main activeNode set
@@ -146,6 +152,7 @@ namespace trie {
     int m_searchLimitThreshold; // threshold used for delimit the answers amount (default : 5)
     int m_fuzzyLimitThreshold; // threshold used for delimit the edit distance from node (default : 1)
     const std::vector<std::string> m_emptyResponse;
+
     void push_string_to_wchar(wchar_t* w, std::string& a)
     {
       setlocale(LC_ALL, "");
@@ -269,7 +276,7 @@ namespace trie {
     void putIndividualWord(std::string& str, const std::string& content)
     {
       TrieNode_t*currentRoot, *lastRoot;
-      currentRoot = this->m_lambdaNode;
+      currentRoot = this->m_lambdaNode.get();
 
       wchar_t chart[str.size()];
       push_string_to_wchar(chart, str);
@@ -285,7 +292,7 @@ namespace trie {
         }
       }
 
-      if (currentRoot != this->m_lambdaNode) {
+      if (currentRoot != this->m_lambdaNode.get()) {
 
         if (!currentRoot->isEndOfWord()) {
           currentRoot->buildContent();
@@ -301,9 +308,9 @@ namespace trie {
       std::queue<std::pair<TrieNode_t*, int>> seekQueue;
       std::unordered_map<TrieNode_t*, TrieNode_t*> father;
       std::set<TrieNode_t*> visited;
-      seekQueue.emplace(this->m_lambdaNode, 0); // add the lambdaNode to the seek
-      m_activeNodeSet.emplace(this->m_lambdaNode, 0); // add the lambdaNode to the activeSet
-      father.emplace(this->m_lambdaNode, nullptr); // set lambdaNode father as nullptr
+      seekQueue.emplace(this->m_lambdaNode.get(), 0); // add the lambdaNode to the seek
+      m_activeNodeSet.emplace(this->m_lambdaNode.get(), 0); // add the lambdaNode to the activeSet
+      father.emplace(this->m_lambdaNode.get(), nullptr); // set lambdaNode father as nullptr
 
       /* initialization */
 
@@ -393,7 +400,7 @@ namespace trie {
     : m_searchLimitThreshold(5)
     , m_fuzzyLimitThreshold(1)
     {
-      this->m_lambdaNode = new TrieNode_t(0);
+      this->m_lambdaNode.reset(new TrieNode_t(0));
 
       DIR* dirp;
       struct dirent* directory;
@@ -417,7 +424,7 @@ namespace trie {
       std::set<TrieNode_t*> visited;
 
       std::stack<TrieNode_t*> nodeStack;
-      nodeStack.push(this->m_lambdaNode);
+      nodeStack.push(this->m_lambdaNode.get());
 
       while (!nodeStack.empty()) {
         currentNode = nodeStack.top();
@@ -445,7 +452,7 @@ namespace trie {
       wchar_t chart[keyword.size()];
       push_string_to_wchar(chart, keyword);
 
-      TrieNode_t* currentNode = this->m_lambdaNode;
+      TrieNode_t* currentNode = this->m_lambdaNode.get();
 
       for (unsigned int i = 0; i < wcslen(chart); i++) {
         currentNode = currentNode->getChild(m_characterMap[chart[i]]);
